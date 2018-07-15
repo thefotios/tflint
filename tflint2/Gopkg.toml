@@ -27,7 +27,6 @@
 
 [[constraint]]
   name = "github.com/hashicorp/terraform"
-  source = "github.com/hashicorp/terraform"
   branch = "v0.12-dev"
 
 [[constraint]]

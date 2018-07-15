@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/md5"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"os"
@@ -33,7 +34,6 @@ func main() {
 	}
 
 	cfg := loadConfig(loader)
-	pp.Print(cfg.Children["test"].Module)
 	vals := loadTFVars(loader, "terraform.tfvars")
 	variableValues := prepareVariables(cfg.Module.Variables, vals)
 
@@ -61,7 +61,9 @@ func main() {
 	}
 
 	expr := body.Attributes["instance_type"].Expr
-	checkExpr(expr)
+	if !isEvalable(expr) {
+		panic(errors.New("Unsupported expr"))
+	}
 
 	val, hcldiags := ctx.EvaluateExpr(expr, cty.DynamicPseudoType, nil)
 	if hcldiags.HasErrors() {
@@ -75,6 +77,66 @@ func main() {
 	}
 
 	pp.Print(ret)
+
+	attributes, diags := cfg.Module.ModuleCalls["test"].Config.JustAttributes()
+	if diags.HasErrors() {
+		panic(err)
+	}
+
+	for name, rawVar := range cfg.Children["test"].Module.Variables {
+		if attribute, exists := attributes[name]; exists {
+			if isEvalable(attribute.Expr) {
+				val, hcldiags := ctx.EvaluateExpr(attribute.Expr, cty.DynamicPseudoType, nil)
+				if hcldiags.HasErrors() {
+					panic(hcldiags.Err())
+				}
+				rawVar.Default = val
+			} else {
+				rawVar.Default = cty.UnknownVal(cty.DynamicPseudoType)
+			}
+		}
+	}
+
+	moduleVariableValues := prepareVariables(cfg.Children["test"].Module.Variables, vals)
+	moduleCtx := terraform.BuiltinEvalContext{
+		PathValue: addrs.RootModuleInstance,
+		Evaluator: &terraform.Evaluator{
+			Meta: &terraform.ContextMeta{
+				Env: getWorkspace(),
+			},
+			Config:             cfg.Children["test"],
+			VariableValues:     moduleVariableValues,
+			VariableValuesLock: &sync.Mutex{},
+		},
+	}
+
+	moduleBody, _, diags := cfg.Children["test"].Module.ManagedResources["aws_instance.web"].Config.PartialContent(&hcl.BodySchema{
+		Attributes: []hcl.AttributeSchema{
+			{
+				Name: "instance_type",
+			},
+		},
+	})
+	if diags.HasErrors() {
+		panic(diags)
+	}
+
+	moduleVal, hcldiags := moduleCtx.EvaluateExpr(moduleBody.Attributes["instance_type"].Expr, cty.DynamicPseudoType, nil)
+	if hcldiags.HasErrors() {
+		panic(hcldiags.Err())
+	}
+
+	if moduleVal.IsKnown() {
+		var moduleRet string
+		err = gocty.FromCtyValue(moduleVal, &moduleRet)
+		if err != nil {
+			panic(err)
+		}
+
+		pp.Print(moduleRet)
+	} else {
+		fmt.Println("Unknown value reference")
+	}
 }
 
 // configload LoadConfig()
@@ -142,19 +204,20 @@ func getWorkspace() string {
 	return current
 }
 
-func checkExpr(expr hcl.Expression) {
+func isEvalable(expr hcl.Expression) bool {
 	refs, diags := lang.ReferencesInExpr(expr)
 	if diags.HasErrors() {
 		panic(diags.Err())
 	}
 	for _, ref := range refs {
-		switch v := ref.Subject.(type) {
+		switch ref.Subject.(type) {
 		case addrs.InputVariable:
 			// noop
 		case addrs.TerraformAttr:
 			// noop
 		default:
-			panic(fmt.Errorf("Unsupported reference: %s", v))
+			return false
 		}
 	}
+	return true
 }

@@ -209,7 +209,6 @@
     "version"
   ]
   revision = "0ad31dee7962454b31293889c330eb8ed598c009"
-  source = "github.com/hashicorp/terraform"
 
 [[projects]]
   name = "github.com/jmespath/go-jmespath"
@@ -383,6 +382,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "ec22fc73aac60ba28ab245cd5aa221c205ae4e6cfb4aa99621bd1469bbd85c2d"
+  inputs-digest = "d6c2371bf8ef2b7c298efb795fd203a55cf726178b31ea8d6c46e59603d7962b"
   solver-name = "gps-cdcl"
   solver-version = 1

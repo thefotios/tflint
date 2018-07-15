@@ -13,4 +13,5 @@ resource "aws_instance" "web" {
 module "test" {
   source = "./module1"
   foo = "${var.type}"
+  bar = "${aws_instance.web.id}"
 }
